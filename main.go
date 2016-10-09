@@ -45,6 +45,7 @@ var (
 	answersFile  = flag.String("answers", "./answers.yaml", "File containing the answers to respond with")
 	logFile      = flag.String("log", "", "Log file")
 	pidFile      = flag.String("pid-file", "", "PID to write to")
+	subscribe    = flag.Bool("subscribe", false, "Subscribe to Rancher events")
 
 	router  = mux.NewRouter()
 	answers Versions
@@ -84,6 +85,18 @@ func main() {
 		Methods("GET", "HEAD").
 		Name("Metadata")
 
+	if *subscribe {
+		log.Info("Subscribing to event")
+		s := NewSubscriber(os.Getenv("CATTLE_URL"),
+			os.Getenv("CATTLE_ACCESS_KEY"),
+			os.Getenv("CATTLE_SECRET_KEY"),
+			*answersFile,
+			loadAnswersFromFile)
+		if err := s.Subscribe(); err != nil {
+			log.Fatal("Failed to subscribe", err)
+		}
+	}
+
 	log.Info("Listening on ", *listen)
 	log.Fatal(http.ListenAndServe(*listen, router))
 }
@@ -111,10 +124,15 @@ func parseFlags() {
 	}
 }
 
-func loadAnswers() (err error) {
+func loadAnswers() error {
+	_, err := loadAnswersFromFile(*answersFile)
+	return err
+}
+
+func loadAnswersFromFile(file string) (Versions, error) {
 	log.Debug("Loading answers")
 	loading = true
-	neu, err := ParseAnswers(*answersFile)
+	neu, err := ParseAnswers(file)
 	if err == nil {
 		for _, data := range neu {
 			defaults, ok := data[DEFAULT_KEY]
@@ -134,7 +152,7 @@ func loadAnswers() (err error) {
 	} else {
 		log.Errorf("Failed to load answers: %v", err)
 	}
-	return err
+	return answers, err
 }
 
 func mergeDefaults(clientAnswers *Answers, defaultAnswers map[string]interface{}) {
